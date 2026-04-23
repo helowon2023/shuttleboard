@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Inter:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1E40AF;
+  --accent: #F59E0B;
+}
+
+body {
+  font-family: 'Noto Sans JP', 'Inter', sans-serif;
+  background-color: #F8FAFC;
+  color: #1e293b;
+  min-height: 100dvh;
+}
+
+/* スマホのフォームズームを防ぐ */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+/* タップターゲット最小サイズ */
+button, a[role="button"], [data-tap-target] {
+  min-height: 52px;
+  min-width: 52px;
+}
+
+/* 印刷スタイル */
+@media print {
+  nav, button, .no-print, .admin-nav { display: none !important; }
+  body { background: white; color: black; }
+  .page-break { page-break-after: always; }
+  .print-only { display: block !important; }
+}
+
+.print-only { display: none; }
+
+/* スコア入力テンキー */
+.score-input {
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  min-height: 64px;
+}
+
+/* スケルトンアニメーション */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.5rem;
+}
