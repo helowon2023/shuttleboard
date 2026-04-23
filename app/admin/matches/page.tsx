@@ -10,6 +10,7 @@ import type { Match, Entry, Block, Category, Tournament, Team, Tie, Rubber } fro
 import { resolveTie } from '@/lib/logic/tieResolver'
 import { RubberInput } from '@/components/team/RubberInput'
 import { TieCard } from '@/components/team/TieCard'
+import type { GameScoreExtras } from '@/components/individual/ScoreInput'
 
 export default function MatchesPage() {
   const [tournament, setTournament] = useState<Tournament | null>(null)
@@ -71,13 +72,46 @@ export default function MatchesPage() {
     return () => { supabase.removeChannel(channel) }
   }, [load])
 
-  async function handleScoreSubmit(score1: number, score2: number, court: string) {
+  // 選択中の試合のmax_setsを取得
+  function getMaxSets(match: Match): number {
+    const block = blocks.find(b => b.id === match.block_id)
+    const cat = categories.find(c => c.id === block?.category_id)
+    return cat?.max_sets ?? 1
+  }
+
+  async function handleScoreSubmit(
+    score1: number, score2: number, court: string, extras?: GameScoreExtras
+  ) {
     if (!selectedMatch) return
     const supabase = createClient()
-    const winner_id = score1 > score2 ? selectedMatch.entry1_id : selectedMatch.entry2_id
+
+    let winner_id: string | null
+    if (extras) {
+      // 3セットモード: ゲーム勝数で判定
+      const g1w = score1 > score2 ? 1 : 2
+      const g2s1 = extras.score1_g2 ?? 0, g2s2 = extras.score2_g2 ?? 0
+      const g2w = g2s1 > g2s2 ? 1 : 2
+      const g3s1 = extras.score1_g3, g3s2 = extras.score2_g3
+      let wins1 = (g1w === 1 ? 1 : 0) + (g2w === 1 ? 1 : 0)
+      let wins2 = (g1w === 2 ? 1 : 0) + (g2w === 2 ? 1 : 0)
+      if (g3s1 != null && g3s2 != null && g3s1 !== g3s2) {
+        wins1 += g3s1 > g3s2 ? 1 : 0
+        wins2 += g3s2 > g3s1 ? 1 : 0
+      }
+      winner_id = wins1 >= 2 ? selectedMatch.entry1_id : selectedMatch.entry2_id
+    } else {
+      winner_id = score1 > score2 ? selectedMatch.entry1_id : selectedMatch.entry2_id
+    }
+
     await supabase.from('matches').update({
-      score1, score2, winner_id, court: court || null, status: '終了',
+      score1, score2, winner_id,
+      court: court || null,
+      status: '終了',
       played_at: new Date().toISOString(),
+      score1_g2: extras?.score1_g2 ?? null,
+      score2_g2: extras?.score2_g2 ?? null,
+      score1_g3: extras?.score1_g3 ?? null,
+      score2_g3: extras?.score2_g3 ?? null,
     }).eq('id', selectedMatch.id)
     showToast('スコアを保存しました')
     setSelectedMatch(null)
@@ -236,6 +270,7 @@ export default function MatchesPage() {
             match={selectedMatch}
             entry1={entries.find(e => e.id === selectedMatch.entry1_id)}
             entry2={entries.find(e => e.id === selectedMatch.entry2_id)}
+            maxSets={getMaxSets(selectedMatch)}
             onSubmit={handleScoreSubmit}
             onCancel={() => setSelectedMatch(null)}
           />

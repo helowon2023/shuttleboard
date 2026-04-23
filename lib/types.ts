@@ -25,6 +25,7 @@ export interface Category {
   code: string | null
   format: string | null
   sort_order: number
+  max_sets?: number    // 1 = 1セットマッチ, 3 = 3セットマッチ (default: 1)
 }
 
 export interface Block {
@@ -51,8 +52,12 @@ export interface Match {
   block_id: string
   entry1_id: string | null
   entry2_id: string | null
-  score1: number | null
-  score2: number | null
+  score1: number | null    // game 1: entry1's points (or games-won for 3-set display)
+  score2: number | null    // game 1: entry2's points
+  score1_g2?: number | null  // game 2: entry1's points
+  score2_g2?: number | null  // game 2: entry2's points
+  score1_g3?: number | null  // game 3 (final): entry1's points
+  score2_g3?: number | null  // game 3 (final): entry2's points
   winner_id: string | null
   court: string | null
   round: number
@@ -68,6 +73,7 @@ export interface Team {
   name: string
   club: string | null
   sort_order: number
+  members?: string | null  // 改行区切りメンバー一覧
 }
 
 export interface Tie {
@@ -92,8 +98,12 @@ export interface Rubber {
   team1_p2: string | null
   team2_p1: string | null
   team2_p2: string | null
-  score1: number | null
-  score2: number | null
+  score1: number | null    // game 1: team1's points
+  score2: number | null    // game 1: team2's points
+  score1_g2?: number | null  // game 2: team1's points
+  score2_g2?: number | null  // game 2: team2's points
+  score1_g3?: number | null  // game 3: team1's points
+  score2_g3?: number | null  // game 3: team2's points
   winner_team_id: string | null
   court: string | null
   status: MatchStatus

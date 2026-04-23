@@ -176,47 +176,58 @@ function TeamRoundRobinTable({ teams, ties }: { teams: Team[]; ties: Tie[] }) {
 }
 
 // ──────────── 団体戦メンバー一覧 ────────────
-function TeamMemberList({ teams, rubbers }: { teams: Team[]; rubbers: Rubber[] }) {
-  // チームごとにrubberに登場した選手名を収集
+function TeamMemberList({ teams, ties, rubbers }: { teams: Team[]; ties: Tie[]; rubbers: Rubber[] }) {
+  if (teams.length === 0) return null
+
+  // チームIDごとに選手名セットを構築（tie経由でteam1/team2を特定）
   const memberMap = new Map<string, Set<string>>()
   for (const team of teams) memberMap.set(team.id, new Set())
 
-  // ties経由でチームIDを特定できないので、rubber内の名前を直接収集
-  // rubberはtie_idを持ち、そこからteam_idが取れないため、名前をそのままリスト化
-  // ties情報をここに渡さないため、rubberのラベルと名前だけ表示
-  // 実装: rubberはblock配下の全tiesから来る -> ties情報とJOINが必要
-  // ここでは rubbers を受け取り、tie_id単位でグループ化して表示しない
-  // 代わりに: team1_p1/p2 をteam1側, team2_p1/p2 をteam2側で集計 (tie情報必要)
-  // シンプル化: rubberに含まれる全ユニーク選手名を列挙
-  const allPlayers = new Set<string>()
-  for (const r of rubbers) {
-    ;[r.team1_p1, r.team1_p2, r.team2_p1, r.team2_p2].forEach(p => { if (p) allPlayers.add(p) })
+  for (const tie of ties) {
+    const tieRubbers = rubbers.filter(r => r.tie_id === tie.id)
+    for (const r of tieRubbers) {
+      if (tie.team1_id) {
+        const s = memberMap.get(tie.team1_id)
+        if (s) { if (r.team1_p1) s.add(r.team1_p1); if (r.team1_p2) s.add(r.team1_p2) }
+      }
+      if (tie.team2_id) {
+        const s = memberMap.get(tie.team2_id)
+        if (s) { if (r.team2_p1) s.add(r.team2_p1); if (r.team2_p2) s.add(r.team2_p2) }
+      }
+    }
   }
-
-  if (teams.length === 0) return null
 
   return (
     <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
       <div className="bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-600">チームメンバー</div>
-      <div className="grid gap-0 divide-y divide-gray-100">
-        {teams.map((team, idx) => (
-          <div key={team.id} className="px-3 py-2">
-            <div className="font-bold text-sm">{idx + 1}. {team.name}
-              {team.club && <span className="font-normal text-gray-400 ml-1">({team.club})</span>}
+      <div className="divide-y divide-gray-100">
+        {teams.map((team, idx) => {
+          // members テキストフィールド優先、なければrubberから収集した名前
+          const fromRubbers = Array.from(memberMap.get(team.id) ?? [])
+          const fromTextField = team.members
+            ? team.members.split(/[\n,、]/).map(s => s.trim()).filter(Boolean)
+            : []
+          const players = fromTextField.length > 0 ? fromTextField : fromRubbers
+
+          return (
+            <div key={team.id} className="px-3 py-2">
+              <div className="font-bold text-sm">
+                {idx + 1}. {team.name}
+                {team.club && <span className="font-normal text-gray-400 ml-1">({team.club})</span>}
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                {players.length > 0
+                  ? players.map((p, i) => (
+                      <div key={i} className="text-xs text-gray-700 border-b border-dotted border-gray-200 py-0.5">{p}</div>
+                    ))
+                  : Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="text-xs border-b border-dotted border-gray-300 py-1">&nbsp;</div>
+                    ))
+                }
+              </div>
             </div>
-            <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5">
-              {/* メンバー欄 — rubberデータがあれば表示、なければ空欄を6つ表示 */}
-              {allPlayers.size > 0
-                ? Array.from(allPlayers).map((p, i) => (
-                    <div key={i} className="text-xs text-gray-600 border-b border-dotted border-gray-200 py-0.5">{p}</div>
-                  ))
-                : Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="text-xs border-b border-dotted border-gray-300 py-1">&nbsp;</div>
-                  ))
-              }
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -241,7 +252,7 @@ export default function ProgramPage() {
     const catIds = (cats ?? []).map(c => c.id)
     if (catIds.length === 0) { setLoading(false); return }
 
-    const { data: blocks } = await supabase.from('blocks').select('*').in('category_id', catIds).eq('block_type', 'league').order('name')
+    const { data: blocks } = await supabase.from('blocks').select('*').in('category_id', catIds).order('name')
     const blockIds = (blocks ?? []).map(b => b.id)
     if (blockIds.length === 0) { setLoading(false); return }
 
@@ -385,7 +396,7 @@ export default function ProgramPage() {
 
                 {/* 団体戦メンバー */}
                 {prog.kind === 'team' && prog.teams.length > 0 && (
-                  <TeamMemberList teams={prog.teams} rubbers={prog.rubbers} />
+                  <TeamMemberList teams={prog.teams} ties={prog.ties} rubbers={prog.rubbers} />
                 )}
 
                 {/* 個人戦: 対戦順 */}
