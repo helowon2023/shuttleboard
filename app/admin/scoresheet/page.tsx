@@ -3,45 +3,59 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Category, Block, Entry, Match, Tournament, Team, Tie, Rubber } from '@/lib/types'
 
-// ────────────────────────────────────────
-// ゲーム得点記録グリッド
-// ────────────────────────────────────────
-function TallySection({
-  label, points, name1, name2,
-}: { label: string; points: number; name1: string; name2: string }) {
+// ──────────────────────────────────────────────────────
+// タリーグリッド（1行 = 1選手分の得点マス）
+// ──────────────────────────────────────────────────────
+function TallyRow({ name, points, shaded }: { name: string; points: number; shaded?: boolean }) {
+  const cellStyle: React.CSSProperties = {
+    border: '1px dashed #888',
+    width: `${Math.floor(560 / points)}px`,
+    height: '18px',
+    minWidth: '0',
+  }
   return (
-    <div className="mb-1">
-      <div className="bg-gray-200 text-xs font-bold px-2 py-0.5 border border-gray-400">{label}</div>
-      <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+    <tr style={{ background: shaded ? '#e8e8e8' : 'white' }}>
+      <td style={{
+        border: '1px solid #666', padding: '0 3px',
+        fontSize: '8px', fontWeight: 'bold', whiteSpace: 'nowrap',
+        maxWidth: '70px', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>{name || '　'}</td>
+      <td style={{ border: '1px solid #666', width: '14px', textAlign: 'center', fontSize: '7px', fontWeight: 'bold', color: '#1a5' }}>S</td>
+      <td style={{ border: '1px solid #666', width: '14px', textAlign: 'center', fontSize: '7px', fontWeight: 'bold', color: '#e44' }}>R</td>
+      {Array.from({ length: points }, (_, i) => (
+        <td key={i} style={cellStyle}></td>
+      ))}
+      <td style={{ border: '1px solid #666', width: '18px', background: '#f5f5f5' }}></td>
+    </tr>
+  )
+}
+
+// ──────────────────────────────────────────────────────
+// 1ゲーム分のセクション
+// ──────────────────────────────────────────────────────
+function GameSection({ label, points, players }: {
+  label: string
+  points: number
+  players: { name: string; shaded?: boolean }[]
+}) {
+  return (
+    <div style={{ marginTop: '5px' }}>
+      <div style={{ fontSize: '8px', fontWeight: 'bold', color: '#333', marginBottom: '1px', paddingLeft: '2px' }}>
+        S · R　{label}
+      </div>
+      <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: '14%' }} />
+          <col style={{ width: '70px' }} />
+          <col style={{ width: '14px' }} />
+          <col style={{ width: '14px' }} />
           {Array.from({ length: points }, (_, i) => (
-            <col key={i} style={{ width: `${86 / points}%` }} />
+            <col key={i} style={{ width: `${Math.floor(560 / points)}px` }} />
           ))}
-          <col style={{ width: '5%' }} />
+          <col style={{ width: '18px' }} />
         </colgroup>
-        <thead>
-          <tr>
-            <th className="border border-gray-400 text-xs px-1 py-0.5 bg-gray-100 text-left">氏名</th>
-            {Array.from({ length: points }, (_, i) => (
-              <th key={i} className="border border-gray-400 text-center bg-gray-50"
-                style={{ fontSize: '8px', padding: '1px 0' }}>
-                {i + 1}
-              </th>
-            ))}
-            <th className="border border-gray-400 text-center bg-gray-100"
-              style={{ fontSize: '8px', padding: '1px' }}>点</th>
-          </tr>
-        </thead>
         <tbody>
-          {[name1, name2].map((name, ri) => (
-            <tr key={ri}>
-              <td className="border border-gray-400 text-xs px-1 py-0.5 font-medium truncate">{name || '　'}</td>
-              {Array.from({ length: points }, (_, i) => (
-                <td key={i} className="border border-gray-400" style={{ height: '1.5rem' }}></td>
-              ))}
-              <td className="border border-gray-400 bg-gray-50" style={{ height: '1.5rem' }}></td>
-            </tr>
+          {players.map((p, i) => (
+            <TallyRow key={i} name={p.name} points={points} shaded={p.shaded} />
           ))}
         </tbody>
       </table>
@@ -49,290 +63,320 @@ function TallySection({
   )
 }
 
-// ────────────────────────────────────────
-// 個人戦スコア用紙1枚
-// ────────────────────────────────────────
-function IndividualSheet({
-  m, tournamentName, maxSets, isDoubles,
-}: {
-  m: Match & { matchNumber: number; categoryName: string; blockName: string; entry1?: Entry; entry2?: Entry }
-  tournamentName: string
+// ──────────────────────────────────────────────────────
+// シングルス用スコア用紙
+// ──────────────────────────────────────────────────────
+function SinglesSheet({ m, tourName, maxSets, matchNum }: {
+  m: Match & { entry1?: Entry; entry2?: Entry; categoryName: string; blockName: string }
+  tourName: string
   maxSets: number
-  isDoubles: boolean
+  matchNum: number
 }) {
-  const name1 = m.entry1?.name ?? ''
-  const name1b = isDoubles ? (m.entry1?.player2 ?? '') : ''
-  const name2 = m.entry2?.name ?? ''
-  const name2b = isDoubles ? (m.entry2?.player2 ?? '') : ''
-  const club1 = m.entry1?.club ?? ''
-  const club2 = m.entry2?.club ?? ''
+  const p1 = m.entry1?.name ?? ''
+  const p2 = m.entry2?.name ?? ''
+  const c1 = m.entry1?.club ?? ''
+  const c2 = m.entry2?.club ?? ''
 
-  // 結果
-  const g1s1 = m.score1, g1s2 = m.score2
-  const g2s1 = m.score1_g2, g2s2 = m.score2_g2
-  const g3s1 = m.score1_g3, g3s2 = m.score2_g3
-  const winner = m.status === '終了' && m.winner_id
-    ? (m.winner_id === m.entry1_id ? (name1 + (name1b ? ` / ${name1b}` : '')) : (name2 + (name2b ? ` / ${name2b}` : '')))
-    : ''
+  const players21 = [{ name: p1 }, { name: p2, shaded: true }]
+  const players11 = [{ name: p1 }, { name: p2, shaded: true }]
 
   return (
-    <div className="score-sheet bg-white" style={{
-      width: '100%', boxSizing: 'border-box',
-      padding: '6mm', border: '1px solid #666',
+    <div className="score-sheet" style={{
+      background: 'white', border: '1px solid #555',
+      padding: '8px 10px', boxSizing: 'border-box', width: '100%',
       pageBreakAfter: 'always', breakAfter: 'page',
+      fontFamily: 'sans-serif',
     }}>
-      {/* ヘッダー行 */}
-      <div className="flex items-start justify-between border-b-2 border-gray-700 pb-1 mb-2">
+      {/* タイトル */}
+      <div style={{ textAlign: 'center', fontSize: '13px', fontWeight: 'bold', borderBottom: '2px solid #333', paddingBottom: '3px', marginBottom: '5px' }}>
+        スコアーシート（得点用紙）
+      </div>
+
+      {/* ヘッダー情報 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px', marginBottom: '4px' }}>
+        {/* 左: 試合情報 */}
+        <div style={{ display: 'grid', gridTemplateRows: 'auto auto auto', gap: '2px' }}>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+            <span style={{ fontWeight: 'bold' }}>種目：</span>{m.categoryName}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
+            <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+              <span style={{ fontWeight: 'bold' }}>試合番号</span><br />
+              <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{matchNum}</span>
+            </div>
+            <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+              <span style={{ fontWeight: 'bold' }}>コート番号</span><br />
+              <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{m.court ?? ''}</span>
+            </div>
+          </div>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '8px', color: '#666' }}>
+            {tourName}　{m.blockName}
+          </div>
+        </div>
+
+        {/* 右: 選手名エリア */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto 1fr auto', gap: '4px', alignItems: 'center' }}>
+          {/* 選手1 */}
+          <div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '22px', fontSize: '11px', fontWeight: 'bold' }}>{p1}</div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '16px', fontSize: '9px', color: '#555', marginTop: '2px' }}>{c1}</div>
+          </div>
+          {/* R/L 左 */}
+          <div style={{ border: '1px solid #555', padding: '2px 4px', fontSize: '10px', fontWeight: 'bold', color: '#1a5', textAlign: 'center', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div>R</div><div>·</div><div>L</div>
+          </div>
+          {/* vs */}
+          <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#999', padding: '0 6px', display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+            <div>—</div><div>—</div>
+          </div>
+          {/* 選手2 */}
+          <div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '22px', fontSize: '11px', fontWeight: 'bold' }}>{p2}</div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '16px', fontSize: '9px', color: '#555', marginTop: '2px' }}>{c2}</div>
+          </div>
+          {/* R/L 右 */}
+          <div style={{ border: '1px solid #555', padding: '2px 4px', fontSize: '10px', fontWeight: 'bold', color: '#1a5', textAlign: 'center', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div>R</div><div>·</div><div>L</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ゲームセクション */}
+      <GameSection label={maxSets >= 3 ? '第1ゲーム（21点）' : '得点記録（21点）'} points={21} players={players21} />
+      {maxSets >= 3 && <>
+        <GameSection label="第2ゲーム（21点）" points={21} players={players21} />
+        <GameSection label="第3ゲーム　ファイナル11点（延長なし）" points={11} players={players11} />
+      </>}
+
+      {/* 署名 */}
+      <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '20px', alignItems: 'end' }}>
         <div>
-          <div className="font-bold text-sm leading-tight">{tournamentName}</div>
-          <div className="text-xs text-gray-600">{m.categoryName}　{m.blockName}</div>
+          <div style={{ fontSize: '9px', fontWeight: 'bold' }}>勝者署名</div>
+          <div style={{ borderBottom: '1px solid #333', height: '20px', marginTop: '4px' }}></div>
         </div>
-        <div className="text-center px-2">
-          <div className="text-xs text-gray-500">{isDoubles ? 'ダブルス' : 'シングルス'}</div>
-          {maxSets >= 3 && <div className="text-xs text-gray-500">3セットマッチ</div>}
+        <div>
+          <div style={{ fontSize: '9px', fontWeight: 'bold' }}>主審署名</div>
+          <div style={{ borderBottom: '1px solid #333', height: '20px', marginTop: '4px' }}></div>
         </div>
-        <div className="text-right">
-          <div className="text-2xl font-bold leading-tight">No. {m.matchNumber}</div>
-          {m.court && <div className="text-xs text-gray-500">コート {m.court}</div>}
-        </div>
-      </div>
-
-      {/* 選手名エリア */}
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-stretch mb-2">
-        <div className="border border-gray-400 rounded px-2 py-1 min-h-[2.2rem]">
-          <div className="font-bold text-sm leading-tight">{name1 || '　'}</div>
-          {isDoubles && <div className="font-bold text-sm leading-tight">{name1b || '　'}</div>}
-          {club1 && <div className="text-xs text-gray-400">{club1}</div>}
-        </div>
-        <div className="flex items-center font-bold text-gray-400 text-base px-2">VS</div>
-        <div className="border border-gray-400 rounded px-2 py-1 min-h-[2.2rem]">
-          <div className="font-bold text-sm leading-tight">{name2 || '　'}</div>
-          {isDoubles && <div className="font-bold text-sm leading-tight">{name2b || '　'}</div>}
-          {club2 && <div className="text-xs text-gray-400">{club2}</div>}
-        </div>
-      </div>
-
-      {/* ゲーム得点記録 */}
-      <TallySection
-        label={maxSets >= 3 ? '第1ゲーム（21点）' : '得点記録（21点）'}
-        points={21}
-        name1={name1 + (name1b ? ` / ${name1b}` : '')}
-        name2={name2 + (name2b ? ` / ${name2b}` : '')}
-      />
-      {maxSets >= 3 && (
-        <>
-          <TallySection
-            label="第2ゲーム（21点）"
-            points={21}
-            name1={name1 + (name1b ? ` / ${name1b}` : '')}
-            name2={name2 + (name2b ? ` / ${name2b}` : '')}
-          />
-          <TallySection
-            label="第3ゲーム　ファイナル11点（延長なし）"
-            points={11}
-            name1={name1 + (name1b ? ` / ${name1b}` : '')}
-            name2={name2 + (name2b ? ` / ${name2b}` : '')}
-          />
-        </>
-      )}
-
-      {/* 結果・署名エリア */}
-      <div className="mt-2 grid grid-cols-[1fr_1fr_2fr] gap-2 text-xs">
-        {/* ゲームスコア */}
-        <div className="border border-gray-400 rounded p-1">
-          <div className="text-gray-500 text-xs mb-1">ゲームスコア</div>
-          <table className="w-full border-collapse text-center" style={{ fontSize: '10px' }}>
-            <thead>
-              <tr>
-                <th className="border border-gray-300 px-1">G</th>
-                <th className="border border-gray-300 px-1">{name1 || '①'}</th>
-                <th className="border border-gray-300 px-1">{name2 || '②'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-gray-300 px-1 font-bold">1</td>
-                <td className="border border-gray-300 px-1 font-bold">{g1s1 ?? ''}</td>
-                <td className="border border-gray-300 px-1 font-bold">{g1s2 ?? ''}</td>
-              </tr>
-              {maxSets >= 3 && (
-                <>
-                  <tr>
-                    <td className="border border-gray-300 px-1 font-bold">2</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g2s1 ?? ''}</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g2s2 ?? ''}</td>
-                  </tr>
-                  <tr>
-                    <td className="border border-gray-300 px-1 font-bold">F</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g3s1 ?? ''}</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g3s2 ?? ''}</td>
-                  </tr>
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {/* 勝者 */}
-        <div className="border border-gray-400 rounded p-1">
-          <div className="text-gray-500 text-xs mb-1">勝者</div>
-          <div className="font-bold text-sm min-h-[1.5rem]">{winner}</div>
-        </div>
-        {/* 署名 */}
-        <div className="border border-gray-400 rounded p-1 flex flex-col gap-2">
-          <div>
-            <div className="text-gray-500 text-xs">勝者署名</div>
-            <div className="border-b border-gray-400 mt-3"></div>
-          </div>
-          <div>
-            <div className="text-gray-500 text-xs">主審署名</div>
-            <div className="border-b border-gray-400 mt-3"></div>
-          </div>
-        </div>
+        <div style={{ fontSize: '8px', color: '#888', whiteSpace: 'nowrap' }}>新星☆柏原</div>
       </div>
     </div>
   )
 }
 
-// ────────────────────────────────────────
-// 団体戦ラバー スコア用紙1枚
-// ────────────────────────────────────────
-function RubberSheet({
-  r, tie, team1, team2, tournamentName, categoryName, blockName, maxSets, rubberIndex,
-}: {
+// ──────────────────────────────────────────────────────
+// ダブルス用スコア用紙
+// ──────────────────────────────────────────────────────
+function DoublesSheet({ m, tourName, maxSets, matchNum }: {
+  m: Match & { entry1?: Entry; entry2?: Entry; categoryName: string; blockName: string }
+  tourName: string
+  maxSets: number
+  matchNum: number
+}) {
+  const p1a = m.entry1?.name ?? ''
+  const p1b = m.entry1?.player2 ?? ''
+  const p2a = m.entry2?.name ?? ''
+  const p2b = m.entry2?.player2 ?? ''
+  const c1 = m.entry1?.club ?? ''
+  const c2 = m.entry2?.club ?? ''
+
+  // ダブルス: 1ペア2名 × 左右 = 4行
+  const players21 = [
+    { name: p1a },
+    { name: p1b },
+    { name: p2a, shaded: true },
+    { name: p2b, shaded: true },
+  ]
+  const players11 = [
+    { name: p1a },
+    { name: p1b },
+    { name: p2a, shaded: true },
+    { name: p2b, shaded: true },
+  ]
+
+  return (
+    <div className="score-sheet" style={{
+      background: 'white', border: '1px solid #555',
+      padding: '8px 10px', boxSizing: 'border-box', width: '100%',
+      pageBreakAfter: 'always', breakAfter: 'page',
+      fontFamily: 'sans-serif',
+    }}>
+      {/* タイトル */}
+      <div style={{ textAlign: 'center', fontSize: '13px', fontWeight: 'bold', borderBottom: '2px solid #333', paddingBottom: '3px', marginBottom: '5px' }}>
+        スコアーシート（得点用紙）
+      </div>
+
+      {/* ヘッダー */}
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: '4px', marginBottom: '4px', alignItems: 'start' }}>
+        {/* 左: 試合情報 */}
+        <div style={{ display: 'grid', gap: '2px' }}>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+            <span style={{ fontWeight: 'bold' }}>種目：</span>{m.categoryName}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
+            <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+              <span style={{ fontWeight: 'bold' }}>試合番号</span><br />
+              <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{matchNum}</span>
+            </div>
+            <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+              <span style={{ fontWeight: 'bold' }}>コート番号</span><br />
+              <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{m.court ?? ''}</span>
+            </div>
+          </div>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '8px', color: '#666' }}>
+            {tourName}　{m.blockName}
+          </div>
+        </div>
+
+        {/* 中: 選手名（2名×2） */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto 1fr auto', gap: '4px', alignItems: 'start' }}>
+          {/* 左ペア */}
+          <div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold' }}>{p1a}</div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>{p1b}</div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '14px', fontSize: '8px', color: '#666', marginTop: '2px' }}>{c1}</div>
+          </div>
+          {/* R/L 左 */}
+          <div style={{ border: '1px solid #555', padding: '2px 4px', fontSize: '10px', fontWeight: 'bold', color: '#1a5', textAlign: 'center', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div>R</div><div>·</div><div>L</div>
+          </div>
+          {/* vs */}
+          <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#999', padding: '0 6px', display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center', alignItems: 'center', alignSelf: 'stretch' }}>
+            <div>—</div><div>—</div><div>—</div>
+          </div>
+          {/* 右ペア */}
+          <div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold' }}>{p2a}</div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>{p2b}</div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '14px', fontSize: '8px', color: '#666', marginTop: '2px' }}>{c2}</div>
+          </div>
+          {/* R/L 右 */}
+          <div style={{ border: '1px solid #555', padding: '2px 4px', fontSize: '10px', fontWeight: 'bold', color: '#1a5', textAlign: 'center', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div>R</div><div>·</div><div>L</div>
+          </div>
+        </div>
+
+        {/* 右: ゲーム数ラベル */}
+        <div style={{ fontSize: '9px', fontWeight: 'bold', paddingLeft: '6px', whiteSpace: 'nowrap' }}>
+          <div style={{ color: '#333' }}>21点2ゲーム</div>
+          <div style={{ color: '#333', marginTop: '4px' }}>ファイナル11点</div>
+          <div style={{ color: '#333' }}>（延長なし）</div>
+        </div>
+      </div>
+
+      {/* ゲームセクション */}
+      <GameSection label={maxSets >= 3 ? '第1ゲーム（21点）' : '得点記録（21点）'} points={21} players={players21} />
+      {maxSets >= 3 && <>
+        <GameSection label="第2ゲーム（21点）" points={21} players={players21} />
+        <GameSection label="第3ゲーム　ファイナル11点（延長なし）" points={11} players={players11} />
+      </>}
+
+      {/* 署名 */}
+      <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '20px', alignItems: 'end' }}>
+        <div>
+          <div style={{ fontSize: '9px', fontWeight: 'bold' }}>勝者署名</div>
+          <div style={{ borderBottom: '1px solid #333', height: '20px', marginTop: '4px' }}></div>
+        </div>
+        <div>
+          <div style={{ fontSize: '9px', fontWeight: 'bold' }}>主審署名</div>
+          <div style={{ borderBottom: '1px solid #333', height: '20px', marginTop: '4px' }}></div>
+        </div>
+        <div style={{ fontSize: '8px', color: '#888', whiteSpace: 'nowrap' }}>新星☆柏原</div>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────
+// 団体戦ラバー用スコア用紙
+// ──────────────────────────────────────────────────────
+function RubberSheet({ r, tie, team1, team2, tourName, catName, blockName, maxSets, rubberIndex }: {
   r: Rubber; tie: Tie; team1?: Team; team2?: Team
-  tournamentName: string; categoryName: string; blockName: string
+  tourName: string; catName: string; blockName: string
   maxSets: number; rubberIndex: number
 }) {
   const isDoubles = r.rubber_type === 'doubles'
   const p1a = r.team1_p1 ?? '', p1b = r.team1_p2 ?? ''
   const p2a = r.team2_p1 ?? '', p2b = r.team2_p2 ?? ''
-  const name1 = isDoubles ? (p1a + (p1b ? ` / ${p1b}` : '')) : p1a
-  const name2 = isDoubles ? (p2a + (p2b ? ` / ${p2b}` : '')) : p2a
 
-  const g1s1 = r.score1, g1s2 = r.score2
-  const g2s1 = r.score1_g2, g2s2 = r.score2_g2
-  const g3s1 = r.score1_g3, g3s2 = r.score2_g3
-  const winner = r.status === '終了' && r.winner_team_id
-    ? (r.winner_team_id === tie.team1_id ? (team1?.name ?? '') : (team2?.name ?? ''))
-    : ''
+  const players = isDoubles
+    ? [{ name: p1a }, { name: p1b }, { name: p2a, shaded: true }, { name: p2b, shaded: true }]
+    : [{ name: p1a }, { name: p2a, shaded: true }]
 
   return (
-    <div className="score-sheet bg-white" style={{
-      width: '100%', boxSizing: 'border-box',
-      padding: '6mm', border: '1px solid #666',
+    <div className="score-sheet" style={{
+      background: 'white', border: '1px solid #555',
+      padding: '8px 10px', boxSizing: 'border-box', width: '100%',
       pageBreakAfter: 'always', breakAfter: 'page',
+      fontFamily: 'sans-serif',
     }}>
-      {/* ヘッダー */}
-      <div className="flex items-start justify-between border-b-2 border-gray-700 pb-1 mb-2">
+      <div style={{ textAlign: 'center', fontSize: '13px', fontWeight: 'bold', borderBottom: '2px solid #333', paddingBottom: '3px', marginBottom: '5px' }}>
+        スコアーシート（得点用紙）
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px', marginBottom: '4px' }}>
+        <div style={{ display: 'grid', gap: '2px' }}>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+            <span style={{ fontWeight: 'bold' }}>種目：</span>{catName}
+          </div>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '9px' }}>
+            <span style={{ fontWeight: 'bold' }}>{r.label}　</span>{isDoubles ? 'ダブルス' : 'シングルス'}
+          </div>
+          <div style={{ border: '1px solid #666', padding: '2px 4px', fontSize: '8px', color: '#666' }}>
+            {tourName}　{blockName}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto 1fr auto', gap: '4px', alignItems: 'start' }}>
+          <div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold' }}>{p1a}</div>
+            {isDoubles && <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>{p1b}</div>}
+            <div style={{ border: '1px solid #666', padding: '2px 6px', fontSize: '8px', color: '#666', marginTop: '2px' }}>{team1?.name ?? ''}</div>
+          </div>
+          <div style={{ border: '1px solid #555', padding: '2px 4px', fontSize: '10px', fontWeight: 'bold', color: '#1a5', textAlign: 'center', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div>R</div><div>·</div><div>L</div>
+          </div>
+          <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#999', padding: '0 6px', display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center', alignItems: 'center', alignSelf: 'stretch' }}>
+            <div>—</div><div>—</div>
+          </div>
+          <div>
+            <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold' }}>{p2a}</div>
+            {isDoubles && <div style={{ border: '1px solid #666', padding: '2px 6px', minHeight: '18px', fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>{p2b}</div>}
+            <div style={{ border: '1px solid #666', padding: '2px 6px', fontSize: '8px', color: '#666', marginTop: '2px' }}>{team2?.name ?? ''}</div>
+          </div>
+          <div style={{ border: '1px solid #555', padding: '2px 4px', fontSize: '10px', fontWeight: 'bold', color: '#1a5', textAlign: 'center', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div>R</div><div>·</div><div>L</div>
+          </div>
+        </div>
+      </div>
+      <GameSection label={maxSets >= 3 ? '第1ゲーム（21点）' : '得点記録（21点）'} points={21} players={players} />
+      {maxSets >= 3 && <>
+        <GameSection label="第2ゲーム（21点）" points={21} players={players} />
+        <GameSection label="第3ゲーム　ファイナル11点（延長なし）" points={11} players={players} />
+      </>}
+      <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '20px', alignItems: 'end' }}>
         <div>
-          <div className="font-bold text-sm leading-tight">{tournamentName}</div>
-          <div className="text-xs text-gray-600">{categoryName}　{blockName}</div>
-          <div className="text-xs text-gray-600">
-            {team1?.name ?? '?'} vs {team2?.name ?? '?'}
-          </div>
+          <div style={{ fontSize: '9px', fontWeight: 'bold' }}>勝者署名</div>
+          <div style={{ borderBottom: '1px solid #333', height: '20px', marginTop: '4px' }}></div>
         </div>
-        <div className="text-center px-2">
-          <div className="text-xs text-gray-500">{isDoubles ? 'ダブルス' : 'シングルス'}</div>
-          {maxSets >= 3 && <div className="text-xs text-gray-500">3セットマッチ</div>}
+        <div>
+          <div style={{ fontSize: '9px', fontWeight: 'bold' }}>主審署名</div>
+          <div style={{ borderBottom: '1px solid #333', height: '20px', marginTop: '4px' }}></div>
         </div>
-        <div className="text-right">
-          <div className="text-lg font-bold leading-tight">{r.label}</div>
-          <div className="text-xs text-gray-500">第{rubberIndex + 1}種目</div>
-          {r.court && <div className="text-xs text-gray-500">コート {r.court}</div>}
-        </div>
-      </div>
-
-      {/* 選手名 */}
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-stretch mb-2">
-        <div className="border border-gray-400 rounded px-2 py-1 min-h-[2.2rem]">
-          <div className="text-xs text-gray-400">{team1?.name}</div>
-          <div className="font-bold text-sm leading-tight">{p1a || '　'}</div>
-          {isDoubles && <div className="font-bold text-sm leading-tight">{p1b || '　'}</div>}
-        </div>
-        <div className="flex items-center font-bold text-gray-400 text-base px-2">VS</div>
-        <div className="border border-gray-400 rounded px-2 py-1 min-h-[2.2rem]">
-          <div className="text-xs text-gray-400">{team2?.name}</div>
-          <div className="font-bold text-sm leading-tight">{p2a || '　'}</div>
-          {isDoubles && <div className="font-bold text-sm leading-tight">{p2b || '　'}</div>}
-        </div>
-      </div>
-
-      {/* ゲーム得点記録 */}
-      <TallySection
-        label={maxSets >= 3 ? '第1ゲーム（21点）' : '得点記録（21点）'}
-        points={21} name1={name1} name2={name2}
-      />
-      {maxSets >= 3 && (
-        <>
-          <TallySection label="第2ゲーム（21点）" points={21} name1={name1} name2={name2} />
-          <TallySection label="第3ゲーム　ファイナル11点（延長なし）" points={11} name1={name1} name2={name2} />
-        </>
-      )}
-
-      {/* 結果・署名 */}
-      <div className="mt-2 grid grid-cols-[1fr_1fr_2fr] gap-2 text-xs">
-        <div className="border border-gray-400 rounded p-1">
-          <div className="text-gray-500 text-xs mb-1">ゲームスコア</div>
-          <table className="w-full border-collapse text-center" style={{ fontSize: '10px' }}>
-            <thead>
-              <tr>
-                <th className="border border-gray-300 px-1">G</th>
-                <th className="border border-gray-300 px-1">{team1?.name ?? '①'}</th>
-                <th className="border border-gray-300 px-1">{team2?.name ?? '②'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-gray-300 px-1 font-bold">1</td>
-                <td className="border border-gray-300 px-1 font-bold">{g1s1 ?? ''}</td>
-                <td className="border border-gray-300 px-1 font-bold">{g1s2 ?? ''}</td>
-              </tr>
-              {maxSets >= 3 && (
-                <>
-                  <tr>
-                    <td className="border border-gray-300 px-1 font-bold">2</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g2s1 ?? ''}</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g2s2 ?? ''}</td>
-                  </tr>
-                  <tr>
-                    <td className="border border-gray-300 px-1 font-bold">F</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g3s1 ?? ''}</td>
-                    <td className="border border-gray-300 px-1 font-bold">{g3s2 ?? ''}</td>
-                  </tr>
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="border border-gray-400 rounded p-1">
-          <div className="text-gray-500 text-xs mb-1">勝チーム</div>
-          <div className="font-bold text-sm min-h-[1.5rem]">{winner}</div>
-        </div>
-        <div className="border border-gray-400 rounded p-1 flex flex-col gap-2">
-          <div>
-            <div className="text-gray-500 text-xs">勝者署名</div>
-            <div className="border-b border-gray-400 mt-3"></div>
-          </div>
-          <div>
-            <div className="text-gray-500 text-xs">主審署名</div>
-            <div className="border-b border-gray-400 mt-3"></div>
-          </div>
-        </div>
+        <div style={{ fontSize: '8px', color: '#888' }}>新星☆柏原</div>
       </div>
     </div>
   )
 }
 
-// ────────────────────────────────────────
+// ──────────────────────────────────────────────────────
 // メインページ
-// ────────────────────────────────────────
+// ──────────────────────────────────────────────────────
 type SheetMatch = Match & {
   matchNumber: number; categoryName: string; blockName: string
   entry1?: Entry; entry2?: Entry; maxSets: number; isDoubles: boolean
 }
 type SheetRubber = Rubber & {
   tie: Tie; team1?: Team; team2?: Team
-  tournamentName: string; categoryName: string; blockName: string
+  tourName: string; catName: string; blockName: string
   maxSets: number; rubberIndex: number
 }
 type Sheet = { type: 'individual'; data: SheetMatch } | { type: 'rubber'; data: SheetRubber }
@@ -345,7 +389,7 @@ export default function ScoreSheetPage() {
   const [selectedBlock, setSelectedBlock] = useState('all')
   const [categories, setCategories] = useState<Category[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
-  const [showAll, setShowAll] = useState(false)  // false = 未試合のみ
+  const [showAll, setShowAll] = useState(false)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -382,7 +426,6 @@ export default function ScoreSheetPage() {
     const result: Sheet[] = []
     let matchNum = 0
 
-    // ブロックをカテゴリ順・ブロック名順でソート
     const sortedBlocks = [...(blks ?? [])].sort((a, b) => {
       const cA = catMap.get(a.category_id)?.sort_order ?? 0
       const cB = catMap.get(b.category_id)?.sort_order ?? 0
@@ -416,7 +459,6 @@ export default function ScoreSheetPage() {
           })
         }
       } else {
-        // 団体戦: tie→rubbers
         const blockTies = (allTies ?? []).filter(tie => tie.block_id === blk.id)
         for (const tie of blockTies) {
           const tieRubbers = (allRubbers ?? [])
@@ -431,8 +473,8 @@ export default function ScoreSheetPage() {
                 tie,
                 team1: tie.team1_id ? teamMap.get(tie.team1_id) : undefined,
                 team2: tie.team2_id ? teamMap.get(tie.team2_id) : undefined,
-                tournamentName: tour.name,
-                categoryName: cat.name,
+                tourName: tour.name,
+                catName: cat.name,
                 blockName: blk.name,
                 maxSets,
                 rubberIndex: ri,
@@ -449,10 +491,9 @@ export default function ScoreSheetPage() {
 
   useEffect(() => { load() }, [load])
 
-  // フィルター
   const filtered = sheets.filter(s => {
-    const catName = s.type === 'individual' ? s.data.categoryName : s.data.categoryName
-    const blockName = s.type === 'individual' ? s.data.blockName : s.data.blockName
+    const catName = s.type === 'individual' ? s.data.categoryName : s.data.catName
+    const blockName = s.data.blockName
     if (selectedCat !== 'all') {
       const cat = categories.find(c => c.id === selectedCat)
       if (cat?.name !== catName) return false
@@ -462,8 +503,7 @@ export default function ScoreSheetPage() {
       if (blk?.name !== blockName) return false
     }
     if (!showAll) {
-      // 未試合・進行中のみ
-      const status = s.type === 'individual' ? s.data.status : s.data.status
+      const status = s.data.status
       if (status === '終了') return false
     }
     return true
@@ -486,7 +526,6 @@ export default function ScoreSheetPage() {
           .score-sheet {
             page-break-after: always !important;
             break-after: page !important;
-            border: 1px solid #555 !important;
             width: 100% !important;
             box-sizing: border-box !important;
           }
@@ -506,7 +545,6 @@ export default function ScoreSheetPage() {
           </button>
         </div>
 
-        {/* 表示切替 */}
         <div className="flex gap-2">
           <button onClick={() => setShowAll(false)}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border ${!showAll ? 'bg-primary text-white border-primary' : 'bg-white border-gray-200 text-gray-600'}`}>
@@ -518,7 +556,6 @@ export default function ScoreSheetPage() {
           </button>
         </div>
 
-        {/* 種目フィルター */}
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button onClick={() => { setSelectedCat('all'); setSelectedBlock('all') }}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${selectedCat === 'all' ? 'bg-primary text-white border-primary' : 'bg-white border-gray-200 text-gray-600'}`}>
@@ -532,7 +569,6 @@ export default function ScoreSheetPage() {
           ))}
         </div>
 
-        {/* ブロックフィルター */}
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button onClick={() => setSelectedBlock('all')}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${selectedBlock === 'all' ? 'bg-accent text-white border-accent' : 'bg-white border-gray-200 text-gray-600'}`}>
@@ -547,11 +583,10 @@ export default function ScoreSheetPage() {
         </div>
 
         <div className="text-sm text-gray-500">
-          {filtered.length}枚（横A4 1ページ×1枚）
+          {filtered.length}枚（横A4・1ページ1枚）
         </div>
       </div>
 
-      {/* スコア用紙 */}
       {filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400 no-print">
           <div className="text-3xl mb-2">📝</div>
@@ -559,31 +594,20 @@ export default function ScoreSheetPage() {
         </div>
       ) : (
         <div className="sheets-container space-y-4">
-          {filtered.map((s, idx) => {
+          {filtered.map((s) => {
             if (s.type === 'individual') {
-              return (
-                <IndividualSheet
-                  key={`ind-${s.data.id}`}
-                  m={s.data}
-                  tournamentName={tournament?.name ?? ''}
-                  maxSets={s.data.maxSets}
-                  isDoubles={s.data.isDoubles}
-                />
-              )
+              const d = s.data
+              return d.isDoubles
+                ? <DoublesSheet key={d.id} m={d} tourName={tournament?.name ?? ''} maxSets={d.maxSets} matchNum={d.matchNumber} />
+                : <SinglesSheet key={d.id} m={d} tourName={tournament?.name ?? ''} maxSets={d.maxSets} matchNum={d.matchNumber} />
             } else {
               const d = s.data
               return (
                 <RubberSheet
-                  key={`rub-${d.id}`}
-                  r={d}
-                  tie={d.tie}
-                  team1={d.team1}
-                  team2={d.team2}
-                  tournamentName={d.tournamentName}
-                  categoryName={d.categoryName}
-                  blockName={d.blockName}
-                  maxSets={d.maxSets}
-                  rubberIndex={d.rubberIndex}
+                  key={d.id}
+                  r={d} tie={d.tie} team1={d.team1} team2={d.team2}
+                  tourName={d.tourName} catName={d.catName} blockName={d.blockName}
+                  maxSets={d.maxSets} rubberIndex={d.rubberIndex}
                 />
               )
             }
