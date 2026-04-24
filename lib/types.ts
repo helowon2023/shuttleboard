@@ -1,5 +1,5 @@
 export type TournamentStatus = '準備中' | '進行中' | '終了'
-export type MatchStatus = '未試合' | '呼び出し中' | '進行中' | '終了'
+export type MatchStatus = '未試合' | '呼び出し中' | '進行中' | '終了' | '不戦勝' | 'TBD'
 export type BlockType = 'league' | 'tournament'
 export type CategoryType = 'individual' | 'team'
 export type FormatType = 'singles' | 'doubles'

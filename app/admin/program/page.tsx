@@ -91,15 +91,16 @@ function RoundRobinTable({ entries, matches }: { entries: Entry[]; matches: Matc
                   {entry.club && <div className="text-gray-400 text-xs">{entry.club}</div>}
                 </td>
                 {entries.map((_, j) => {
-                  if (i === j) return <td key={j} className="border border-gray-400 bg-gray-200 text-center">—</td>
+                  if (i === j) return <td key={j} className="border border-gray-400 bg-gray-300 text-center">╲</td>
                   const m = grid[i][j]
                   if (!m || m.status !== '終了') return <td key={j} className="border border-gray-400 px-1 py-1 text-center text-gray-200"></td>
                   const myScore = m.entry1_id === entry.id ? m.score1 : m.score2
                   const oppScore = m.entry1_id === entry.id ? m.score2 : m.score1
                   const won = m.winner_id === entry.id
                   return (
-                    <td key={j} className={`border border-gray-400 px-1 py-1 text-center font-bold ${won ? 'text-primary' : 'text-red-500'}`}>
-                      {myScore}-{oppScore}
+                    <td key={j} className={`border border-gray-400 px-0.5 py-1 text-center font-bold text-xs ${won ? 'bg-pink-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+                      <div>{won ? '○' : '×'}</div>
+                      <div className="text-xs">{myScore}-{oppScore}</div>
                     </td>
                   )
                 })}
@@ -151,15 +152,16 @@ function TeamRoundRobinTable({ teams, ties }: { teams: Team[]; ties: Tie[] }) {
                   {team.club && <div className="text-gray-400">{team.club}</div>}
                 </td>
                 {teams.map((_, j) => {
-                  if (i === j) return <td key={j} className="border border-gray-400 bg-gray-200 text-center">—</td>
+                  if (i === j) return <td key={j} className="border border-gray-400 bg-gray-300 text-center">╲</td>
                   const tie = grid[i][j]
                   if (!tie || !tie.winner_team_id) return <td key={j} className="border border-gray-400 px-1 py-1 text-center text-gray-200"></td>
                   const won = tie.winner_team_id === team.id
                   const myR = tie.team1_id === team.id ? tie.team1_rubbers : tie.team2_rubbers
                   const oppR = tie.team1_id === team.id ? tie.team2_rubbers : tie.team1_rubbers
                   return (
-                    <td key={j} className={`border border-gray-400 px-1 py-1 text-center font-bold ${won ? 'text-primary' : 'text-red-500'}`}>
-                      {myR}-{oppR}
+                    <td key={j} className={`border border-gray-400 px-0.5 py-1 text-center font-bold text-xs ${won ? 'bg-pink-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+                      <div>{won ? '○' : '×'}</div>
+                      <div className="text-xs">{myR}-{oppR}</div>
                     </td>
                   )
                 })}
