@@ -254,12 +254,16 @@ export default function SetupPage() {
     showToast('種目を追加しました')
   }
 
+  // 選択中カテゴリが団体戦かどうか
+  const selectedCatObj = categories.find(c => c.id === selectedCatId)
+  const isTeamCatSetup = selectedCatObj?.type === 'team'
+
   async function handleStep3Entries() {
-    if (!selectedCatId || !entriesText.trim()) { showToast('種目と参加者を入力してください', 'error'); return }
+    if (!selectedCatId || !entriesText.trim()) { showToast('種目と参加者/チームを入力してください', 'error'); return }
     const supabase = createClient()
 
     const lines = entriesText.split('\n').filter(l => l.trim())
-    const parsedEntries = lines.map(line => {
+    const parsedItems = lines.map(line => {
       const parts = line.split(',')
       return { name: parts[0].trim(), club: parts[1]?.trim() ?? null }
     })
@@ -271,11 +275,41 @@ export default function SetupPage() {
       setBlocks(prev => prev.filter(b => b.category_id !== selectedCatId))
     }
 
-    // ブロック数に応じて均等分配（同クラブを別ブロックに分散）
     const blockNames = ['Aブロック','Bブロック','Cブロック','Dブロック','Eブロック','Fブロック']
-    const actualBlockCount = Math.min(blockCount, parsedEntries.length)
+    const actualBlockCount = Math.min(blockCount, parsedItems.length)
 
-    // クラブごとに分けて、ブロックに均等配置
+    // ── 団体戦: teams テーブルに登録 ──
+    if (isTeamCatSetup) {
+      const newBlocks: Block[] = []
+      // 均等分配（クラブ分散なし）
+      const buckets: typeof parsedItems[] = Array.from({ length: actualBlockCount }, () => [])
+      parsedItems.forEach((item, idx) => buckets[idx % actualBlockCount].push(item))
+
+      for (let i = 0; i < actualBlockCount; i++) {
+        const bucket = buckets[i]
+        if (bucket.length === 0) continue
+        const { data: blockData, error: blockErr } = await supabase
+          .from('blocks')
+          .insert({ category_id: selectedCatId, name: blockNames[i] ?? `${i+1}ブロック`, block_type: 'league' })
+          .select().single()
+        if (blockErr) { showToast(`ブロック作成エラー: ${blockErr.message}`, 'error'); return }
+        if (!blockData) continue
+        newBlocks.push(blockData)
+
+        const insertData = bucket.map((t, idx) => ({
+          block_id: blockData.id, name: t.name, club: t.club, sort_order: idx,
+        }))
+        const { error } = await supabase.from('teams').insert(insertData)
+        if (error) { showToast(`チーム登録エラー: ${error.message}`, 'error'); return }
+      }
+      setBlocks(prev => [...prev.filter(b => b.category_id !== selectedCatId), ...newBlocks])
+      showToast(`${parsedItems.length}チームを${actualBlockCount}ブロックに登録しました`)
+      setEntriesText('')
+      return
+    }
+
+    // ── 個人戦: entries テーブルに登録（同クラブ別ブロック分散） ──
+    const parsedEntries = parsedItems
     const clubGroups = new Map<string, typeof parsedEntries>()
     for (const e of parsedEntries) {
       const key = e.club ?? '__none'
@@ -284,7 +318,6 @@ export default function SetupPage() {
     }
     const groupList = Array.from(clubGroups.values()).sort((a, b) => b.length - a.length)
 
-    // ラウンドロビン式にブロックへ振り分け
     const blockBuckets: typeof parsedEntries[] = Array.from({ length: actualBlockCount }, () => [])
     let bi = 0
     for (const group of groupList) {
@@ -556,14 +589,19 @@ export default function SetupPage() {
       {/* STEP 3 */}
       {step === 3 && (
         <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
-          <h2 className="font-bold text-lg">STEP 3: 参加者登録</h2>
+          <h2 className="font-bold text-lg">STEP 3: {isTeamCatSetup ? 'チーム登録' : '参加者登録'}</h2>
           <div>
             <label className="text-sm font-medium text-gray-700">種目を選択</label>
             <select className="w-full border border-gray-200 rounded-xl px-3 py-3 mt-1 focus:outline-none" value={selectedCatId} onChange={e => setSelectedCatId(e.target.value)}>
               <option value="">選択してください</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}（{c.type === 'team' ? '団体' : '個人'}）</option>)}
             </select>
           </div>
+          {isTeamCatSetup && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-700">
+              🏆 団体戦 — チームを登録します。対戦組み合わせは「組合せ」ページで設定してください。
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium text-gray-700">ブロック数</label>
             <div className="flex gap-2 mt-2 flex-wrap">
@@ -578,20 +616,28 @@ export default function SetupPage() {
                 </button>
               ))}
             </div>
-            {blockCount > 1 && (
+            {blockCount > 1 && !isTeamCatSetup && (
               <p className="text-xs text-blue-600 mt-1">同じクラブは自動的に別ブロックに分散されます</p>
             )}
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700">参加者（1行1人、カンマで所属クラブ追加可）</label>
+            <label className="text-sm font-medium text-gray-700">
+              {isTeamCatSetup
+                ? 'チーム名（1行1チーム、カンマで所属追加可）'
+                : '参加者（1行1人、カンマで所属クラブ追加可）'}
+            </label>
             <textarea
               className="w-full border border-gray-200 rounded-xl px-3 py-3 mt-1 focus:outline-none focus:border-primary h-40 font-mono text-sm"
               value={entriesText}
               onChange={e => setEntriesText(e.target.value)}
-              placeholder={'山田太郎,倉敷クラブ\n鈴木花子,岡山クラブ\n田中次郎'}
+              placeholder={isTeamCatSetup
+                ? '倉敷クラブA\n岡山クラブ,岡山市\n玉野クラブ'
+                : '山田太郎,倉敷クラブ\n鈴木花子,岡山クラブ\n田中次郎'}
             />
           </div>
-          <button onClick={handleStep3Entries} className="w-full bg-done text-white rounded-xl py-3 font-bold">参加者を登録</button>
+          <button onClick={handleStep3Entries} className="w-full bg-done text-white rounded-xl py-3 font-bold">
+            {isTeamCatSetup ? 'チームを登録' : '参加者を登録'}
+          </button>
           <div className="flex gap-3">
             <button onClick={() => setStep(2)} className="flex-1 bg-gray-100 text-gray-600 rounded-xl py-3 font-medium">← 戻る</button>
             <button onClick={() => setStep(4)} className="flex-1 bg-primary text-white rounded-xl py-3 font-bold">次へ →</button>
