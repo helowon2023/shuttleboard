@@ -388,11 +388,15 @@ export default function ProgramPage() {
                   {prog.kind === 'individual' ? (
                     prog.entries.length > 0
                       ? <RoundRobinTable entries={prog.entries} matches={prog.matches} />
-                      : <div className="text-center py-4 text-gray-400 text-sm">参加者なし</div>
+                      : <div className="text-center py-4 text-gray-400 text-sm no-print">
+                          参加者未登録 — <a href="/admin/blocks" className="text-primary underline">ブロックページで追加</a>
+                        </div>
                   ) : (
                     prog.teams.length > 0
                       ? <TeamRoundRobinTable teams={prog.teams} ties={prog.ties} />
-                      : <div className="text-center py-4 text-gray-400 text-sm">チームなし</div>
+                      : <div className="text-center py-4 text-gray-400 text-sm no-print">
+                          チーム未登録 — <a href="/admin/blocks" className="text-primary underline">ブロックページで追加</a>
+                        </div>
                   )}
                 </div>
 
